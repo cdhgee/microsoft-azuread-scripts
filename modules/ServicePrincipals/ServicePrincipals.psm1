@@ -1,8 +1,11 @@
 Function Get-AADServicePrincipal {
 
-  [CmdletBinding()]
+  [CmdletBinding(DefaultParameterSetName = "All")]
   [OutputType([Microsoft.Open.AzureAD.Model.ServicePrincipal[]])]
   Param(
+    # Object Id of the service principal in Azure Active Directory (unique in this tenant only)
+    [Parameter(Mandatory = $false, ParameterSetName = "All")]
+    [switch]$All,
     # Object Id of the service principal in Azure Active Directory (unique in this tenant only)
     [Parameter(Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, ParameterSetName = "SPObjectId")]
     [ValidateNotNullOrEmpty()]
@@ -34,11 +37,47 @@ Function Get-AADServicePrincipal {
         }
 
       }
+
+      "All" {
+
+        Get-AzureADServicePrincipal -All $true
+
+      }
     }
 
   }
 
 }
+
+
+Function Get-AADPrincipalDetails {
+
+  [CmdletBinding()]
+  Param(
+    [Parameter(Mandatory = $false)]
+    [string]$PrincipalId
+  )
+
+  If ($null -ne $PrincipalId -and $PrincipalId.Length -gt 0) {
+
+    $user = Get-AzureADObjectByObjectId -ObjectIds $PrincipalId -ErrorAction SilentlyContinue
+
+  }
+
+  If ($null -ne $user) {
+
+    $user.UserPrincipalName.ToLower()
+
+  }
+  Else {
+
+    ""
+
+  }
+
+
+}
+
 
 Function Get-AADServicePrincipalPermissions {
 
@@ -57,8 +96,8 @@ Function Get-AADServicePrincipalPermissions {
 
       $a `
       | Get-AzureADServicePrincipalOauth2PermissionGrant -All $true -PipelineVariable grant `
-      | Foreach-Object -PipelineVariable scope { $grant.Scope -split " " } `
-      | Foreach-Object {
+      | Foreach-Object -PipelineVariable scope -Process { $grant.Scope.Trim() -split " " } `
+      | Foreach-Object -Process {
 
         $resource = Get-AzureADServicePrincipal -ObjectId $grant.ResourceId
         If ($grant.ConsentType -eq "Principal") {
@@ -82,34 +121,34 @@ Function Get-AADServicePrincipalPermissions {
           ConsentPrincipal = $consentPrincipal
         }
 
-        # Application permissions
+      }
 
-        $a `
-        | Get-AzureADServiceAppRoleAssignedTo -PipelineVariable grant `
-        | Where-Object { $grant.PrincipalType -eq "ServicePrincipal" } `
-        | Foreach-Object {
+      # Application permissions
 
-          $resource = Get-AzureADServicePrincipal -ObjectId $grant.ResourceId
-          $appRole = $resource.AppRoles | Where-Object { $_.Id -eq $grant.Id }
+      $a `
+      | Get-AzureADServiceAppRoleAssignedTo -PipelineVariable grant `
+      | Where-Object { $grant.PrincipalType -eq "ServicePrincipal" } `
+      | Foreach-Object {
 
-          [PSCustomObject]@{
-            AppId            = $a.AppId
-            App              = $a.DisplayName
-            ResourceId       = $grant.ResourceId
-            Resource         = $resource.DisplayName
-            Type             = "Application"
-            Scope            = $appRole.Value
-            Description      = $appRole.Description
-            ConsentType      = "Admin consent"
-            ConsentPrincipal = "An administrator"
+        $resource = Get-AzureADServicePrincipal -ObjectId $grant.ResourceId
+        $appRole = $resource.AppRoles | Where-Object { $_.Id -eq $grant.Id }
 
-          }
+        [PSCustomObject]@{
+          AppId            = $a.AppId
+          App              = $a.DisplayName
+          ResourceId       = $grant.ResourceId
+          Resource         = $resource.DisplayName
+          Type             = "Application"
+          Scope            = $appRole.Value
+          Description      = $appRole.Description
+          ConsentType      = "Admin consent"
+          ConsentPrincipal = "An administrator"
 
         }
 
       }
+
     }
   }
-
 
 }
